@@ -29,9 +29,14 @@ workflow can be
 ## example
 
 ```
-from videoprocess.process import process_a_pic
+from videoprocess.process import process_a_pic_by_face_solution, process_a_pic_by_holistic, process_a_pic_by_blaze
+import os
 
-process_a_pic('./img.png','zxm')
+process_a_pic_by_blaze('./masked_2304.png','zxm')
+
+process_a_pic_by_face_solution('./masked_2304.png','zxm2')
+
+process_a_pic_by_holistic('./masked_2304.png','zxm3')
 
 ```
 
