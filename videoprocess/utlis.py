@@ -11,6 +11,9 @@ import mediapipe as mp
 
 # from mediapipe.tasks import python
 # from mediapipe.tasks.python import vision
+from mediapipe.framework.formats import detection_pb2
+from mediapipe.framework.formats import landmark_pb2
+from mediapipe.framework.formats import location_data_pb2
 
 mp_face_detection = mp.solutions.face_detection
 mp_drawing = mp.solutions.drawing_utils
@@ -23,6 +26,15 @@ FONT_SIZE = 1
 FONT_THICKNESS = 1
 TEXT_COLOR = (255, 0, 0)  # red
 BG_COLOR = (192, 192, 192) 
+_PRESENCE_THRESHOLD = 0.5
+_VISIBILITY_THRESHOLD = 0.5
+_BGR_CHANNELS = 3
+
+WHITE_COLOR = (224, 224, 224)
+BLACK_COLOR = (0, 0, 0)
+RED_COLOR = (0, 0, 255)
+GREEN_COLOR = (0, 128, 0)
+BLUE_COLOR = (255, 0, 0)
 
 blaze_face_model_path = os.path.join(os.path.dirname(__file__), 'blaze_face_short_range.tflite')
 
@@ -84,7 +96,12 @@ def detect_face_by_holistic(img_file):
 
     return results
 
-def mask_face(img_obj, detection_result, model_name):
+def mask_face(img_file, detection_result, model_name):
+    img_obj = mp.Image.create_from_file(img_file)
+    cv_image_obj = cv2.imread(img_file)
+    cv_image_mat = cv_image_obj.copy()
+    
+
     image_copy = np.copy(img_obj.numpy_view())
     annotated_image = image_copy.copy()
     height, width, _ = image_copy.shape
@@ -107,49 +124,95 @@ def mask_face(img_obj, detection_result, model_name):
             convexhull[3][0][1] = bbox.origin_y 
 
             cv2.fillConvexPoly(mask, convexhull, 255)
-            
+
     elif model_name == 'face_solution' :
-        for detection in detection_result.detections:
+        if detection_result.detections is not None:
+            
+            for detection in detection_result.detections:
 
-            convexhull = np.zeros((5, 1, 2), np.int32)
-            convexhull[0][0][0] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.LEFT_EAR_TRAGION).x * width)
-            convexhull[0][0][1] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.LEFT_EAR_TRAGION).y * height)
+                convexhull = np.zeros((5, 1, 2), np.int32)
+                convexhull[0][0][0] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.LEFT_EAR_TRAGION).x * width)
+                convexhull[0][0][1] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.LEFT_EAR_TRAGION).y * height)
 
-            convexhull[1][0][0] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.MOUTH_CENTER).x * width)
-            convexhull[1][0][1] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.MOUTH_CENTER).y * height)
+                convexhull[1][0][0] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.MOUTH_CENTER).x * width)
+                convexhull[1][0][1] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.MOUTH_CENTER).y * height)
 
-            convexhull[2][0][0] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.RIGHT_EAR_TRAGION).x * width)
-            convexhull[2][0][1] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.RIGHT_EAR_TRAGION).y * height)
+                convexhull[2][0][0] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.RIGHT_EAR_TRAGION).x * width)
+                convexhull[2][0][1] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.RIGHT_EAR_TRAGION).y * height)
 
-            convexhull[3][0][0] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.RIGHT_EYE).x * width)
-            convexhull[3][0][1] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.RIGHT_EYE).y * height)
+                convexhull[3][0][0] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.RIGHT_EYE).x * width)
+                convexhull[3][0][1] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.RIGHT_EYE).y * height)
 
-            convexhull[4][0][0] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.LEFT_EYE).x * width)
-            convexhull[4][0][1] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.LEFT_EYE).y * height)
+                convexhull[4][0][0] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.LEFT_EYE).x * width)
+                convexhull[4][0][1] = int(mp_face_detection.get_key_point(detection, mp_face_detection.FaceKeyPoint.LEFT_EYE).y * height)
 
-            cv2.fillConvexPoly(mask, convexhull, 255)
+                cv2.fillConvexPoly(mask, convexhull, 255)
+
+                bbox_drawing_spec = mp_drawing.DrawingSpec()
+                if not detection.location_data:
+                    continue
+                if cv_image_mat.shape[2] != _BGR_CHANNELS:
+                    raise ValueError('Input image must contain three channel bgr data.')
+                image_rows, image_cols, _ = cv_image_obj.shape
+                # image_rows, image_cols, _ = image.sh       
+                location = detection.location_data                                         
+                if location.format != location_data_pb2.LocationData.RELATIVE_BOUNDING_BOX:
+                  raise ValueError(
+                      'LocationData must be relative for this drawing funtion to work.')
+  
+                if not location.HasField('relative_bounding_box'):
+                  continue
+                relative_bounding_box = location.relative_bounding_box
+
+                convexhull = np.zeros((4, 1, 2), np.int32)
+                convexhull[0][0][0] = int(relative_bounding_box.xmin * width )
+                convexhull[0][0][1] = int(relative_bounding_box.ymin * height )
+
+                convexhull[1][0][0] = int(relative_bounding_box.xmin * width )
+                convexhull[1][0][1] = int((relative_bounding_box.ymin  + relative_bounding_box.height)* height)
+
+                convexhull[2][0][0] = int((relative_bounding_box.xmin + relative_bounding_box.width)* width)
+                convexhull[2][0][1] = int((relative_bounding_box.ymin + relative_bounding_box.height)* height)
+    
+                convexhull[3][0][0] = int((relative_bounding_box.xmin + relative_bounding_box.width)* width)
+                convexhull[3][0][1] = int(relative_bounding_box.ymin * height)
+                # print(convexhull)
+                rect_start_point = mp_drawing._normalized_to_pixel_coordinates(
+                    relative_bounding_box.xmin, relative_bounding_box.ymin, image_cols,
+                        image_rows)
+                rect_end_point = mp_drawing._normalized_to_pixel_coordinates(
+                    relative_bounding_box.xmin + relative_bounding_box.width,
+                    relative_bounding_box.ymin + relative_bounding_box.height, image_cols,
+                        image_rows)
+                cv2.rectangle(mask, rect_start_point, rect_end_point,
+                    bbox_drawing_spec.color, bbox_drawing_spec.thickness)
+                
+                cv2.fillConvexPoly(mask, convexhull, 255)
+
+
+
 
     elif model_name == 'holistic' :
+        if detection_result.pose_landmarks.landmark is not None:
+            convexhull = np.zeros((6, 1, 2), np.int32)
+            convexhull[0][0][0] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.LEFT_EAR].x * width)
+            convexhull[0][0][1] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.LEFT_EAR].y * height)
 
-        convexhull = np.zeros((6, 1, 2), np.int32)
-        convexhull[0][0][0] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.LEFT_EAR].x * width)
-        convexhull[0][0][1] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.LEFT_EAR].y * height)
+            convexhull[1][0][0] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.MOUTH_LEFT].x * width)
+            convexhull[1][0][1] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.MOUTH_LEFT].y * height)
 
-        convexhull[1][0][0] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.MOUTH_LEFT].x * width)
-        convexhull[1][0][1] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.MOUTH_LEFT].y * height)
+            convexhull[2][0][0] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.MOUTH_RIGHT].x * width)
+            convexhull[2][0][1] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.MOUTH_RIGHT].y * height)
 
-        convexhull[2][0][0] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.MOUTH_RIGHT].x * width)
-        convexhull[2][0][1] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.MOUTH_RIGHT].y * height)
-    
-        convexhull[3][0][0] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.RIGHT_EAR].x * width)
-        convexhull[3][0][1] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.RIGHT_EAR].y * height)
+            convexhull[3][0][0] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.RIGHT_EAR].x * width)
+            convexhull[3][0][1] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.RIGHT_EAR].y * height)
 
-        convexhull[4][0][0] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.RIGHT_EYE].x * width)
-        convexhull[4][0][1] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.RIGHT_EYE].y * height)
+            convexhull[4][0][0] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.RIGHT_EYE].x * width)
+            convexhull[4][0][1] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.RIGHT_EYE].y * height)
 
-        convexhull[5][0][0] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.LEFT_EYE].x * width)
-        convexhull[5][0][1] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.LEFT_EYE].y * height)
-        cv2.fillConvexPoly(mask, convexhull, 255)
+            convexhull[5][0][0] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.LEFT_EYE].x * width)
+            convexhull[5][0][1] = int(detection_result.pose_landmarks.landmark[mp_holistic.PoseLandmark.LEFT_EYE].y * height)
+            cv2.fillConvexPoly(mask, convexhull, 255)
 
     frame_copy = cv2.blur(annotated_image, (27, 27))
     face_extracted = cv2.bitwise_and(frame_copy, frame_copy, mask=mask)
